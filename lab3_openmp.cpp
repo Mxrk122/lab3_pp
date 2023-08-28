@@ -2,59 +2,48 @@
 #include <fstream>
 #include <cstdlib>
 #include <ctime>
+#include <omp.h> // Incluir biblioteca OpenMP
+
 using namespace std;
 
 void generateNumbers(const char* filename, int N) {
-
-    // cargar el archivo
     ofstream file(filename);
     if (!file) {
         cerr << "Error al abrir el archivo para escribir." << endl;
         return;
     }
-
-    // generador de aleatorios
     srand(time(0));
     for (int i = 0; i < N; ++i) {
-        // generar un número aleatorio entre 0 y 999
         int numeroAleatorio = rand() % 1000;
         file << numeroAleatorio;
-
-        // separar por comas
         if (i < N - 1) {
             file << ",";
         }
     }
-
     file.close();
 }
 
-
 void quickSort(int* arr, int l, int h) {
     if (l < h) {
-        // decidi tomar el ultimo elemento como pivote
         int pivot = arr[h];
-
-        // obtener el index del principio
         int i = l - 1;
 
-
+        #pragma omp parallel for shared(arr, pivot) schedule(static) 
         for (int j = l; j <= h - 1; j++) {
-            // si se encuentra un elemento menor al pivote
             if (arr[j] < pivot) {
-                i++;
-                // intercambiar con el mas peque;o
-                swap(arr[i], arr[j]);
+                #pragma omp critical
+                {
+                    i++;
+                    swap(arr[i], arr[j]);
+                }
             }
         }
-        
-        // intercambiar el pivote
         swap(arr[i + 1], arr[h]);
-        // indice resultante
         int pivotIndex = i + 1;
 
-        // ordenar los subarrays correspondietes
+        #pragma omp task firstprivate(arr, l, pivotIndex)
         quickSort(arr, l, pivotIndex - 1);
+        #pragma omp task firstprivate(arr, h, pivotIndex)
         quickSort(arr, pivotIndex + 1, h);
     }
 }
@@ -64,13 +53,10 @@ int main() {
     const char* sorted = "sorted.txt";
     int N = 10;
 
-    // generar los numeros
     generateNumbers(unsorted, N);
 
-    // asignar memoria en el heap
     int* arregloNumeros = new int[N];
 
-    // almacenar numeros en array
     FILE* f = fopen(unsorted, "r");
     char coma;
     for (int i = 0; i < N; ++i) {
@@ -87,16 +73,14 @@ int main() {
     }
     fclose(f);
 
-    // Iniciar medición de tiempo
-    clock_t start = clock();
-
-    // ordenar numeros
-    quickSort(arregloNumeros, 0, N - 1);
-
-    // Finalizar medición de tiempo
-    clock_t end = clock();
-    double elapsed_time = double(end - start) / CLOCKS_PER_SEC;
-    cout << "Tiempo de ejecución secuencial: " << elapsed_time << " segundos." << endl;
+    double startTime = omp_get_wtime();
+    #pragma omp parallel
+    {
+        #pragma omp single
+        quickSort(arregloNumeros, 0, N - 1);
+    }
+    double endTime = omp_get_wtime();
+    cout << "Tiempo de ejecución paralelo: " << endTime - startTime << " segundos." << endl;
 
     FILE* output = fopen(sorted, "w");
     for (int i = 0; i < N; ++i) {
@@ -113,7 +97,6 @@ int main() {
     }
     fclose(output);
 
-    // liberar la memoria
     delete[] arregloNumeros;
 
     return 0;
